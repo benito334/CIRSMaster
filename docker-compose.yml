@@ -92,3 +92,154 @@ services:
       - qdrant
     ports:
       - "8002:8002"
+
+  chat_orchestrator:
+    build: ./backend/chat_orchestrator
+    container_name: cirs-chat-orchestrator
+    environment:
+      - RETRIEVER_URL=${RETRIEVER_URL:-http://hybrid_retriever:8002}
+      - LLM_MODE=${LLM_MODE:-local}
+      - LLM_LOCAL_URL=${LLM_LOCAL_URL:-http://ollama:11434}
+      - LLM_LOCAL_MODEL=${LLM_LOCAL_MODEL:-llama3.1:8b-instruct}
+      - LLM_REMOTE_URL=${LLM_REMOTE_URL:-https://api.openai.com/v1/chat/completions}
+      - LLM_REMOTE_MODEL=${LLM_REMOTE_MODEL:-gpt-4o-mini}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - MAX_TOKENS=${MAX_TOKENS:-1500}
+      - TEMPERATURE=${TEMPERATURE:-0.3}
+      - TOP_K=${TOP_K:-6}
+    depends_on:
+      - hybrid_retriever
+    volumes:
+      - ./data:/data
+    ports:
+      - "8003:8003"
+
+  ui_web:
+    build: ./frontend/chat_ui
+    container_name: cirs-ui-web
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://chat_orchestrator:8003}
+      - VITE_DEFAULT_MODE=${VITE_DEFAULT_MODE:-hybrid}
+      - VITE_MAX_TOKENS=${VITE_MAX_TOKENS:-1500}
+      - VITE_TEMPERATURE=${VITE_TEMPERATURE:-0.7}
+    depends_on:
+      - chat_orchestrator
+    ports:
+      - "5173:80"
+
+  monitoring:
+    build: ./backend/monitoring
+    container_name: cirs-monitoring
+    environment:
+      - DB_URL=${DB_URL}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+    depends_on:
+      - qdrant
+    ports:
+      - "8010:8010"
+
+  monitoring_ui:
+    build: ./frontend/monitoring_ui
+    container_name: cirs-monitoring-ui
+    depends_on:
+      - monitoring
+    ports:
+      - "5174:80"
+
+  evaluation:
+    build: ./backend/evaluation
+    container_name: cirs-evaluation
+    environment:
+      - DB_URL=${DB_URL}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - EMBED_MODEL=${EMBED_MODEL:-BAAI/bge-large-en-v1.5}
+      - USE_GPU=${USE_GPU:-true}
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    ports:
+      - "8011:8011"
+
+  alignment_qa:
+    build: ./backend/alignment_qa
+    container_name: cirs-alignment-qa
+    environment:
+      - DB_URL=${DB_URL}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - EMBED_MODEL=${EMBED_MODEL:-BAAI/bge-large-en-v1.5}
+      - USE_GPU=${USE_GPU:-true}
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    ports:
+      - "8012:8012"
+
+  reinforcement:
+    build: ./backend/reinforcement
+    container_name: cirs-reinforcement
+    environment:
+      - DB_URL=${DB_URL}
+      - CONFIG_PATH=${CONFIG_PATH:-./backend/chat_orchestrator/config.yaml}
+    volumes:
+      - ./backend:/backend
+      - ./data:/data
+    ports:
+      - "8013:8013"
+
+  feedback:
+    build: ./backend/feedback
+    container_name: cirs-feedback
+    environment:
+      - DB_URL=${DB_URL}
+    depends_on:
+      - db
+    volumes:
+      - ./data:/data
+    ports:
+      - "8014:8014"
+
+  finetune:
+    build: ./backend/finetune
+    container_name: cirs-finetune
+    environment:
+      - DB_URL=${DB_URL}
+      - FINETUNE_ENABLED=${FINETUNE_ENABLED:-false}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    volumes:
+      - ./data:/data
+      - ./backend:/backend
+    ports:
+      - "8015:8015"
+
+  security_guardrails:
+    build: ./backend/security_guardrails
+    container_name: cirs-security-guardrails
+    environment:
+      - DB_URL=${DB_URL}
+      - REDACTION_LOG_PATH=/data/security/redaction_log.json
+    volumes:
+      - ./data:/data
+    ports:
+      - "8016:8016"
+
+  license_audit:
+    build: ./backend/license_audit
+    container_name: cirs-license-audit
+    environment:
+      - DB_URL=${DB_URL}
+    volumes:
+      - ./data:/data
+    ports:
+      - "8017:8017"
