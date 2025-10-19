@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+sentence-transformers
+qdrant-client
+whoosh
+torch

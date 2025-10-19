@@ -1,0 +1,94 @@
+version: "3.9"
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cirs-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+  asr_gpu:
+    build: ./backend/transcription/asr_gpu
+    container_name: cirs-asr-gpu
+    environment:
+      - ASR_MODEL=${ASR_MODEL:-large-v3}
+      - ASR_COMPUTE_TYPE=${ASR_COMPUTE_TYPE:-float16}
+      - ASR_DIARIZATION=${ASR_DIARIZATION:-false}
+      - INPUT_PATH=/data/ingestion
+      - OUTPUT_PATH=/data/transcripts
+      - DB_URL=${DB_URL}
+      - PYANNOTE_AUTH_TOKEN=${PYANNOTE_AUTH_TOKEN}
+      - RUN_TAG=${RUN_TAG}
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    ports:
+      - "8001:8001"
+    command: ["python3", "main.py", "--input", "/data/ingestion"]
+
+  validation_gpu:
+    build: ./backend/processing/validation_gpu
+    container_name: cirs-validation-gpu
+    environment:
+      - INPUT_PATH=/data/transcripts
+      - OUTPUT_PATH=/data/validated
+      - DB_URL=${DB_URL}
+      - VALIDATION_MODEL=${VALIDATION_MODEL:-biogpt}
+      - VALIDATION_THRESHOLD=${VALIDATION_THRESHOLD:-0.85}
+      - UMLS_PATH=${UMLS_PATH:-/models/umls}
+      - USE_GPU=${USE_GPU:-true}
+      - RUN_TAG=${RUN_TAG}
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    command: ["python3", "main.py", "--input", "/data/transcripts"]
+
+  chunking_embeddings_gpu:
+    build: ./backend/processing/chunking_embeddings_gpu
+    container_name: cirs-chunking-embeddings-gpu
+    environment:
+      - INPUT_PATH=/data/validated
+      - OUTPUT_PATH=/data/chunks
+      - DB_URL=${DB_URL}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-cirs_chunks_v1}
+      - EMBED_MODEL=${EMBED_MODEL:-BAAI/bge-large-en-v1.5}
+      - EMBED_BATCH_SIZE=${EMBED_BATCH_SIZE:-16}
+      - CHUNK_SIZE_TOKENS=${CHUNK_SIZE_TOKENS:-350}
+      - CHUNK_OVERLAP_TOKENS=${CHUNK_OVERLAP_TOKENS:-50}
+      - RUN_TAG=${RUN_TAG}
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    command: ["python3", "main.py", "--input", "/data/validated"]
+
+  hybrid_retriever:
+    build: ./backend/retrieval/hybrid_retriever
+    container_name: cirs-hybrid-retriever
+    environment:
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-cirs_chunks_v1}
+      - BM25_INDEX_PATH=${BM25_INDEX_PATH:-/data/index/bm25}
+      - EMBED_MODEL=${EMBED_MODEL:-BAAI/bge-large-en-v1.5}
+      - VECTOR_WEIGHT=${VECTOR_WEIGHT:-0.6}
+      - LEXICAL_WEIGHT=${LEXICAL_WEIGHT:-0.4}
+      - TOP_K_VECTOR=${TOP_K_VECTOR:-20}
+      - TOP_K_LEXICAL=${TOP_K_LEXICAL:-20}
+    volumes:
+      - ./data:/data
+    depends_on:
+      - qdrant
+    ports:
+      - "8002:8002"

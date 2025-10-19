@@ -1,0 +1,12 @@
+python-dotenv
+numpy
+soundfile
+librosa
+ffmpeg-python
+faster-whisper
+whisperx
+ctranslate2
+pyannote.audio
+psycopg2-binary
+requests
+tqdm

@@ -1,0 +1,9 @@
+python-dotenv
+scispacy
+medspacy
+transformers
+torch
+spacy
+umls-downloader
+numpy
+tqdm
