@@ -106,3 +106,243 @@
 - Add lexical fallback when Qdrant unavailable; expose `/metrics` for latency.  
 - Thread `source_id` through earlier stages for complete provenance in payloads.  
 - Proceed to Milestone 2.9 – Chat Orchestrator & Curriculum Builder Integration.  
+
+## 2025-10-19 — Milestone 2.9: Chat Orchestrator & Curriculum Builder Integration
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/chat_orchestrator/config.py  
+- backend/chat_orchestrator/llm_client.py  
+- backend/chat_orchestrator/orchestrator.py  
+- backend/chat_orchestrator/curriculum_builder.py  
+- backend/chat_orchestrator/main.py  
+- backend/chat_orchestrator/requirements.txt  
+- backend/chat_orchestrator/Dockerfile  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented Chat Orchestrator FastAPI with `/chat`, `/module`, `/health`.  
+- Integrated Hybrid Retriever for context; grounded prompts with inline citation schema.  
+- LLM client supports local (Ollama) and remote (OpenAI-compatible) modes via `.env`.  
+- Basic Curriculum Builder converts retrieved chunks into module JSON.  
+- Compose service `chat_orchestrator` exposed at `http://localhost:8003`.  
+
+**Verification:**  
+- Compose: `docker compose up -d --build chat_orchestrator` launches API.  
+- Chat: `curl -X POST localhost:8003/chat -H "Content-Type: application/json" -d '{"query":"What are symptoms of CIRS?"}'` returns grounded answer JSON with citations.  
+- Module: `curl -X POST localhost:8003/module -H "Content-Type: application/json" -d '{"topic":"Lyme co-infections"}'` returns module JSON.  
+
+**Next Step:**  
+- Add guardrails (citation enforcement, answer confidence scoring) and `/metrics` endpoint.  
+- Add Markdown export to `/module?format=md` and richer objectives/quizzes.  
+- Wire deterministic seeds and temperature in `.env`; add retries/fallbacks if retriever/LLM unavailable.  
+
+## 2025-10-19 — Milestone 3.0: Frontend Chat UI & Curriculum Builder Interface
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- frontend/chat_ui/package.json  
+- frontend/chat_ui/vite.config.ts  
+- frontend/chat_ui/index.html  
+- frontend/chat_ui/src/main.tsx  
+- frontend/chat_ui/src/App.tsx  
+- frontend/chat_ui/src/lib/api.ts  
+- frontend/chat_ui/src/components/ChatPanel.tsx  
+- frontend/chat_ui/src/components/MessageBubble.tsx  
+- frontend/chat_ui/src/components/CitationViewer.tsx  
+- frontend/chat_ui/src/components/ModuleBuilder.tsx  
+- frontend/chat_ui/src/components/SettingsDrawer.tsx  
+- frontend/chat_ui/Dockerfile  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Scaffolded Vite React TS app with chat and learning mode tabs.  
+- Implemented chat panel calling `/chat` and module builder calling `/module`.  
+- Added basic message rendering with citations and a settings drawer reflecting env defaults.  
+- Dockerized UI and added `ui_web` service exposed at `http://localhost:5173`.  
+
+**Verification:**  
+- Build UI image: `docker compose up -d --build ui_web` serves app at `http://localhost:5173`.  
+- Chat request hits `chat_orchestrator` and displays response + citations.  
+- Module builder fetches from `/module` and renders objectives/sections/quiz.  
+
+**Next Step:**  
+- Add Tailwind + shadcn/ui styling, SSE streaming, and citation preview modals.  
+- Link citations to transcript viewer routes (`/transcript?source_id=...&t=...`).  
+- Add Markdown export button for modules and basic state persistence.  
+
+## 2025-10-19 — Milestone 3.1: Provenance Dashboard & Monitoring Suite
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/monitoring/config.py  
+- backend/monitoring/metrics_collector.py  
+- backend/monitoring/provenance.py  
+- backend/monitoring/main.py  
+- backend/monitoring/requirements.txt  
+- backend/monitoring/Dockerfile  
+- frontend/monitoring_ui/package.json  
+- frontend/monitoring_ui/vite.config.ts  
+- frontend/monitoring_ui/index.html  
+- frontend/monitoring_ui/src/main.tsx  
+- frontend/monitoring_ui/src/App.tsx  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented Monitoring API with `/health`, `/metrics` (Prometheus), `/provenance/{answer_id}`, and `/reprocess/{source_id}` (stub queue).  
+- Added minimal provenance resolver and Prometheus metrics collectors.  
+- Built Monitoring UI (React/Vite) with metric cards and a simple provenance list.  
+- Added `monitoring` and `monitoring_ui` services to Compose (ports 8010 and 5174).  
+
+**Verification:**  
+- Compose: `docker compose up -d --build monitoring monitoring_ui` exposes API at `http://localhost:8010` and UI at `http://localhost:5174`.  
+- `curl http://localhost:8010/metrics` returns Prometheus metrics text.  
+- `curl -X POST http://localhost:8010/provenance/demo -H "Content-Type: application/json" -d '{"retrieved":[]}'` returns a provenance skeleton.  
+
+**Next Step:**  
+- Integrate real lineage from Postgres + Qdrant payloads; include run tags and exact file links.  
+- Add GPU utilization exporters and LLM latency hooks from services.  
+- Optional: Add Prometheus + Grafana stack; wire scrape target at `/metrics`.  
+
+## 2025-10-19 — Milestone 3.2: LLM Evaluation & Confidence Scoring Layer
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/evaluation/config.py  
+- backend/evaluation/similarity.py  
+- backend/evaluation/scorer.py  
+- backend/evaluation/validator.py  
+- backend/evaluation/main.py  
+- backend/evaluation/requirements.txt  
+- backend/evaluation/Dockerfile  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented Evaluation API with `/evaluate`, `/history`, and `/metrics`.  
+- Confidence scoring via embedding cosine similarity (answer vs retrieved chunks).  
+- Support ratio using n-gram overlap; hallucination risk from confidence and citation density.  
+- Medical grounding validator placeholder to flag terms missing from context.  
+- Optional Postgres upsert to `cirs.answer_evaluations`.  
+
+**Verification:**  
+- Compose: `docker compose up -d --build evaluation` exposes API at `http://localhost:8011`.  
+- Health/Metrics: `curl http://localhost:8011/health` and `curl http://localhost:8011/metrics`.  
+- Evaluate sample: `curl -X POST http://localhost:8011/evaluate -H "Content-Type: application/json" -d '{"answer_id":"demo","answer_text":"...","citations":[],"retrieved_chunks":[{"text":"..."}]}'`.  
+
+**Next Step:**  
+- Wire Chat Orchestrator to call `/evaluate` and surface confidence badges in `/chat` response.  
+- Replace validator with SciSpaCy/MedSpaCy + UMLS; add unit tests for scoring.  
+- Expose aggregated evaluation metrics in Monitoring dashboard (3.1).
+
+## 2025-10-19 — Milestone 3.3: Evidence Alignment & Summarization QA
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/alignment_qa/config.py  
+- backend/alignment_qa/aligner.py  
+- backend/alignment_qa/summarizer.py  
+- backend/alignment_qa/main.py  
+- backend/alignment_qa/requirements.txt  
+- backend/alignment_qa/Dockerfile  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented sentence-level alignment: splits answers into sentences, computes semantic similarity to retrieved chunks, and maps sentences → evidence chunks.  
+- Calculated metrics: `alignment_coverage`, `agreement_score`, and `weak_claims`.  
+- Generated concise QA summary based on coverage/agreement thresholds.  
+- Persisted results to Postgres table `cirs.answer_alignment` (idempotent upsert).  
+- Exposed Prometheus metrics (`alignment_coverage`, `alignment_agreement`).  
+
+**Verification:**  
+- Compose: `docker compose up -d --build alignment_qa` exposes API at `http://localhost:8012`.  
+- Health/Metrics: `curl http://localhost:8012/health` and `curl http://localhost:8012/metrics`.  
+- Align sample:
+  `curl -X POST http://localhost:8012/align -H "Content-Type: application/json" -d '{"answer_id":"demo","answer_text":"CIRS involves biotoxins. Treatment includes bile acid sequestrants.","retrieved_chunks":[{"chunk_id":"c1","text":"Biotoxin exposure is common in CIRS."},{"chunk_id":"c2","text":"Bile acid sequestrants are used as treatment options."}]}'`  
+
+**Next Step:**  
+- Integrate Chat Orchestrator to call `/align` and return per-sentence evidence with UI highlights (🟢/🟡/🔴).  
+- Upgrade sentence splitter to spaCy; add configurable `ALIGNMENT_MIN_SCORE`.  
+- Visualize coverage trend in Monitoring UI; add filter by `source_type`.  
+
+## 2025-10-19 — Milestone 3.4: Adaptive Module Generation & Reinforcement Loop
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/reinforcement/config.py  
+- backend/reinforcement/feedback_analyzer.py  
+- backend/reinforcement/adaptive_trainer.py  
+- backend/reinforcement/main.py  
+- backend/reinforcement/requirements.txt  
+- backend/reinforcement/Dockerfile  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented Reinforcement API with `/reinforce`, `/status`, and `/metrics`.  
+- Aggregates QA signals from `cirs.answer_evaluations` and `cirs.answer_alignment` over rolling window.  
+- Computes parameter adjustments (retrieval_top_k, chunk_overlap, summary_temperature) via heuristic rules.  
+- Persists runs to `cirs.model_tuning_history` (idempotent upsert).  
+- Compose service `reinforcement` exposed at `http://localhost:8013`.  
+
+**Verification:**  
+- Compose: `docker compose up -d --build reinforcement` exposes API.  
+- Health/Metrics: `curl http://localhost:8013/health` and `curl http://localhost:8013/metrics`.  
+- Trigger run: `curl -X POST http://localhost:8013/reinforce`.  
+- Check last status: `curl http://localhost:8013/status`.  
+
+**Next Step:**  
+- Wire Curriculum Builder to consume tuned params; optionally write back to `.env`/YAML.  
+- Add scheduler for daily runs; chart reinforcement trends in Monitoring UI.  
+- Extend adjustments with coverage/agreement thresholds and guardrails.
+
+## 2025-10-19 — Milestone 3.5: User Feedback Loop & Model Fine-Tuning
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/feedback/config.py  
+- backend/feedback/schema.py  
+- backend/feedback/main.py  
+- backend/feedback/requirements.txt  
+- backend/feedback/Dockerfile  
+- docker-compose.yml  
+  - (Optional planned) backend/finetune/*  
+
+**Actions Completed:**  
+- Implemented Feedback API with `/feedback/answer`, `/feedback/module`, `/history`, and `/metrics` counters.  
+- Created DB schema for `cirs.user_feedback` and `cirs.finetune_corpus`.  
+- Wired Prometheus `feedback_total{type, rating}` counter increments per submission.  
+- Added `feedback` service on port 8014 to Compose.  
+- (Planned) Optional `finetune` service wiring added to Compose; code to be added when enabled.  
+
+**Verification:**  
+- Compose: `docker compose up -d --build feedback` exposes API at `http://localhost:8014`.  
+- Post feedback: `curl -X POST http://localhost:8014/feedback/answer -H "Content-Type: application/json" -d '{"answer_id":"a1","rating":5,"helpful":true}'`.  
+- Metrics: `curl http://localhost:8014/metrics` shows `feedback_total`.  
+
+**Next Step:**  
+- Integrate reinforcement (3.4) to ingest rolling feedback; expand `cirs.finetune_corpus` with high-confidence, high-coverage, high-rating samples.  
+- Implement optional `backend/finetune/` LoRA trainer (PEFT) gated by `FINETUNE_ENABLED`.  
+- Add UI rating controls (thumbs + 1–5) and flags in Chat and Module views.
+
+## 2025-10-19 — Milestone 3.6: Security / PII Guardrails & License Compliance
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/security_guardrails/config.py  
+- backend/security_guardrails/redactor.py  
+- backend/security_guardrails/main.py  
+- backend/security_guardrails/requirements.txt  
+- backend/security_guardrails/Dockerfile  
+- backend/license_audit/config.py  
+- backend/license_audit/auditor.py  
+- backend/license_audit/main.py  
+- backend/license_audit/requirements.txt  
+- backend/license_audit/Dockerfile  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented PII redaction service with `/redact`, `/audit`, `/metrics`; logs to `cirs.redaction_log` and `/data/security/redaction_log.json`.  
+- Added regex-based detectors (emails, phones, MRN, person-like) with mask tokens.  
+- Implemented License Audit service with `/license/scan`, `/license/report`, `/metrics`; populates `cirs.license_registry`.  
+- Emitted Prometheus metrics: `pii_redactions_total{type}` and `restricted_sources_total{license}`.  
+- Added `security_guardrails` (8016) and `license_audit` (8017) services to Compose.  
+
+**Verification:**  
+- Security: `docker compose up -d --build security_guardrails`; `curl -X POST http://localhost:8016/redact -H "Content-Type: application/json" -d '{"text":"John Smith email john@x.com"}'` returns masked text; `curl http://localhost:8016/metrics`.  
+- License: `docker compose up -d --build license_audit`; `curl -X POST http://localhost:8017/license/scan -H "Content-Type: application/json" -d '{"path":"/data"}'`; `curl http://localhost:8017/license/report`.  
+
+**Next Step:**  
+- Thread license metadata through chunk payloads and enforce export restrictions in `chat_orchestrator`/`curriculum_builder`.  
+- Optionally integrate Presidio/SpaCy for improved PII detection.  
+- Add Monitoring UI “Data Integrity” tab with redactions over time and license distribution.

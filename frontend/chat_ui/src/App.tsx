@@ -1,0 +1,26 @@
+import React, { useMemo, useState } from 'react'
+import ChatPanel from './components/ChatPanel'
+import ModuleBuilder from './components/ModuleBuilder'
+import SettingsDrawer from './components/SettingsDrawer'
+
+export default function App() {
+  const [tab, setTab] = useState<'chat' | 'learn'>('chat')
+
+  return (
+    <div style={{fontFamily:'Inter, system-ui, Arial', height:'100vh', display:'flex', flexDirection:'column'}}>
+      <header style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 16px', borderBottom:'1px solid #e5e7eb'}}>
+        <div style={{display:'flex', gap:12, alignItems:'center'}}>
+          <strong>CIRS Agent</strong>
+          <nav style={{display:'flex', gap:8}}>
+            <button onClick={()=>setTab('chat')} style={{padding:'6px 10px', borderRadius:6, border:'1px solid #d1d5db', background: tab==='chat'? '#111827' : 'white', color: tab==='chat' ? 'white' : '#111827'}}>Chat</button>
+            <button onClick={()=>setTab('learn')} style={{padding:'6px 10px', borderRadius:6, border:'1px solid #d1d5db', background: tab==='learn'? '#111827' : 'white', color: tab==='learn' ? 'white' : '#111827'}}>Learning Mode</button>
+          </nav>
+        </div>
+        <SettingsDrawer />
+      </header>
+      <main style={{flex:1, minHeight:0}}>
+        {tab === 'chat' ? <ChatPanel /> : <ModuleBuilder />}
+      </main>
+    </div>
+  )
+}
