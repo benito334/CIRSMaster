@@ -243,3 +243,53 @@ services:
       - ./data:/data
     ports:
       - "8017:8017"
+
+  backup:
+    build: ./backend/backup
+    container_name: cirs-backup
+    environment:
+      - BACKUP_ROOT=/backups/snapshots
+      - INCLUDE_DIRS=/data/transcripts,/data/validated,/data/chunks,/data/ingestion,/data/security,/data/index
+      - PG_HOST=db
+      - PG_USER=cirs
+      - PG_DB=cirs
+      - QDRANT_URL=http://qdrant:6333
+      - OFFSITE_ENABLED=${OFFSITE_ENABLED:-false}
+      - DB_URL=${DB_URL}
+    depends_on:
+      - db
+      - qdrant
+    volumes:
+      - ./data:/data:ro
+      - ./data/qdrant:/qdrant/storage:ro
+      - ./backups:/backups
+    ports:
+      - "8018:8018"
+
+  auth:
+    build: ./backend/auth
+    container_name: cirs-auth
+    environment:
+      - DB_URL=${DB_URL}
+      - AUTH_JWT_ALG=${AUTH_JWT_ALG:-HS256}
+      - AUTH_JWT_SECRET=${AUTH_JWT_SECRET}
+      - AUTH_ACCESS_TTL_MIN=${AUTH_ACCESS_TTL_MIN:-15}
+      - AUTH_REFRESH_TTL_DAYS=${AUTH_REFRESH_TTL_DAYS:-14}
+      - TENANCY_DEFAULT_NAME=${TENANCY_DEFAULT_NAME:-default}
+    depends_on:
+      - db
+    ports:
+      - "8019:8019"
+
+  docs:
+    build: ./docs
+    container_name: cirs-docs
+    volumes:
+      - ./docs:/docs
+    ports:
+      - "8020:8020"
+    depends_on:
+      - auth
+      - hybrid_retriever
+      - chat_orchestrator
+    restart: unless-stopped

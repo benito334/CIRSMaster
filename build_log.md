@@ -346,3 +346,135 @@
 - Thread license metadata through chunk payloads and enforce export restrictions in `chat_orchestrator`/`curriculum_builder`.  
 - Optionally integrate Presidio/SpaCy for improved PII detection.  
 - Add Monitoring UI “Data Integrity” tab with redactions over time and license distribution.
+
+## 2025-10-19 — Milestone 3.7: Backup & Versioned Data Snapshots
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/backup/config.py  
+- backend/backup/pg.py  
+- backend/backup/qdrant.py  
+- backend/backup/artifacts.py  
+- backend/backup/manifest.py  
+- backend/backup/scheduler.py  
+- backend/backup/main.py  
+- backend/backup/requirements.txt  
+- backend/backup/Dockerfile  
+- docker-compose.yml  
+- scripts/restore_example.sh  
+
+**Actions Completed:**  
+- Implemented Backup API/CLI with `/backup/run`, `/backup/list`, `/backup/restore`, `/health`, `/metrics`.  
+- Postgres dump via `pg_dump` → `pg_dump.sql.gz`; Qdrant global snapshot JSON; `/data` artifacts tarball with SHA256 checksums.  
+- Snapshot Manifest with git commit, env fingerprint, host info, timestamp.  
+- Basic retention (keep last N) and Prometheus metrics: `backup_success_total`, `backup_failure_total`, `backup_last_duration_seconds`, `restore_success_total`.  
+- Added `backup` service (8018) to Compose with volumes `/data`, `/backups`, and qdrant storage.  
+
+**Verification:**  
+- Compose: `docker compose up -d --build backup`; `curl -X POST http://localhost:8018/backup/run`.  
+- List snapshots: `curl http://localhost:8018/backup/list`.  
+- Verify checksums: `sha256sum -c /backups/snapshots/<id>/checksums.sha256`.  
+- Trial restore in dev via `scripts/restore_example.sh <id>`.  
+
+**Next Step:**  
+- Add full daily/weekly/monthly rotation; capture image digests and model versions into `manifest.json`.  
+- Optional offsite mirror via rclone/Restic when `OFFSITE_ENABLED=true`.  
+- Integrate backup health status into Monitoring UI.
+
+## 2025-10-19 — Milestone 3.8: Multi-Tenant User Auth & RBAC
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/auth/config.py  
+- backend/auth/security.py  
+- backend/auth/models.py  
+- backend/auth/main.py  
+- backend/auth/requirements.txt  
+- backend/auth/Dockerfile  
+- backend/common/auth_client.py  
+- docker-compose.yml  
+
+**Actions Completed:**  
+- Implemented Auth service with `/auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/whoami`, `/health`, `/metrics`.  
+- Password hashing via `passlib[bcrypt]`; JWT mint/verify using `HS256` (configurable).  
+- DB schema created: `cirs.tenants`, `cirs.users`, `cirs.api_keys` (DDL ready; API keys endpoints pending).  
+- Bootstrap on startup supports default tenant and admin via env vars.  
+- Shared dependency `backend/common/auth_client.py` exposes `require_auth(scopes=[...])` for services.  
+- Compose updated with `auth` service on port 8019.  
+
+**Verification:**  
+- Compose: `docker compose up -d --build auth`; health at `http://localhost:8019/health`.  
+- Signup: `curl -X POST http://localhost:8019/auth/signup -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"pass"}'`.  
+- Login: `curl -X POST http://localhost:8019/auth/login -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"pass"}'` → returns tokens.  
+- Whoami: `curl http://localhost:8019/auth/whoami -H "Authorization: Bearer <access>"`.  
+
+**Next Step:**  
+- Add API key endpoints and scope enforcement; integrate `require_auth` across services (chat_orchestrator `/chat`, retriever `/search`, backup `/backup/run`, etc.).  
+- Thread `tenant_id` into domain tables and queries; add Qdrant filter on `tenant_id`.  
+- Frontend: add `/login` page, token storage, and auth header injection in `frontend/chat_ui/src/lib/api.ts`.
+
+## 2025-10-19 — Milestone 3.9: Deployment Automation & CI/CD
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- .github/workflows/ci.yml  
+- .github/workflows/release.yml  
+- Makefile  
+- compose.prod.yml  
+- scripts/deploy_local.sh  
+- scripts/sbom.sh  
+- scripts/migrate.sh  
+- VERSION (planned)  
+- CHANGELOG.md (planned)  
+
+**Actions Completed:**  
+- CI: Lint/tests, Docker build matrix (no push), Trivy scan, SBOM artifact via GitHub Actions.  
+- Release: Tag-triggered workflow scaffolding for GHCR build/push and SBOM artifact.  
+- Makefile targets for dev ergonomics; production compose with pinned services scaffolded.  
+- Deploy scripts for local rollout, SBOM generation, and DB migration placeholder.  
+
+**Verification:**  
+- PR CI runs on push/PR; view checks for lint/test/scan/sbom.  
+- Tag `v0.9.0` to trigger `release.yml`; confirm images in GHCR and SBOM artifacts.  
+- `make build` builds locally; `scripts/deploy_local.sh` updates prod stack.  
+
+**Next Step:**  
+- Add `VERSION` and `CHANGELOG.md` with keep-a-changelog; wire version labels into Docker builds.  
+- Pin images by digest in `compose.prod.yml`; add path filters to build only changed services.  
+- Add Bandit strict mode and dependency license checks; optional SLSA provenance.
+
+## 2025-10-19 — Milestone 3.10: Documentation & Developer Toolkit
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- docs/mkdocs.yml  
+- docs/Dockerfile  
+- docs/index.md  
+- docs/getting_started.md  
+- docs/architecture.md  
+- docs/developer_guide.md  
+- docs/api_reference.md  
+- docs/database_schema.md  
+- docs/gpu_setup.md  
+- docs/troubleshooting.md  
+- backend/docs_generator/main.py  
+- docker-compose.yml  
+- .env.example  
+- CONTRIBUTING.md  
+- CODE_OF_CONDUCT.md  
+- LICENSE  
+- .gitignore  
+- Makefile  
+- scripts/dev_init.sh  
+
+**Actions Completed:**  
+- Added MkDocs-based documentation suite with architecture, getting started, API reference, GPU setup, troubleshooting, and release process.  
+- Implemented OpenAPI aggregator to merge service specs into a single JSON (`docs/api/openapi_combined.json`).  
+- Added docs service to Compose on port 8020; Makefile targets to build/serve docs.  
+- Provided `.env.example`, contributing guide, code of conduct, license, and developer bootstrap script.  
+
+**Verification:**  
+- `docker compose up -d --build docs` then visit `http://localhost:8020`.  
+- Generate combined OpenAPI: `python backend/docs_generator/main.py --output docs/api/openapi_combined.json`.  
+- `make docs-serve` serves docs locally.  
+
+**Next Step:**  
+- Expand docs with Monitoring UI guides and provenance dashboards.  
+- Add ER diagram generation workflow and API auto-refresh.  
+- Publish docs as static site artifact in CI.

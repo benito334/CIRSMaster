@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from prometheus_client import Counter, CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 import json, os
-from .redactor import redact_text
+from redactor import redact_text
 
 registry = CollectorRegistry()
 pii_counter = Counter('pii_redactions_total', 'PII redaction events', ['type'], registry=registry)
