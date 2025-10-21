@@ -1,0 +1,163 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: cirs
+      POSTGRES_USER: cirs
+      POSTGRES_PASSWORD: cirs
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  pipeline_controller:
+    build: ./backend/pipeline_controller
+    environment:
+      DB_URL: ${DB_URL}
+      PIPELINE_PORT: 8021
+    depends_on:
+      - db
+    ports:
+      - "8021:8021"
+    restart: unless-stopped
+
+  docs_ingest:
+    build: ./backend/ingestion/docs
+    environment:
+      PDF_INPUT_PATH: ${PDF_INPUT_PATH:-/data/ingestion/pdf}
+      EPUB_INPUT_PATH: ${EPUB_INPUT_PATH:-/data/ingestion/epub}
+      OUTPUT_PATH: ${OUTPUT_PATH:-/data/transcripts}
+      RUN_TAG: ${RUN_TAG:-}
+    volumes:
+      - ./data:/data
+    depends_on:
+      - db
+    command: ["python", "main.py"]
+
+  asr_gpu:
+    build: ./backend/transcription/asr_gpu
+    gpus: all
+    environment:
+      INPUT_PATH: ${INPUT_PATH:-/data/ingestion}
+      OUTPUT_PATH: ${OUTPUT_PATH:-/data/transcripts}
+      RUN_TAG: ${RUN_TAG:-}
+      ASR_MODEL: ${ASR_MODEL:-large-v2}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-float16}
+      ASR_DIARIZATION: ${ASR_DIARIZATION:-false}
+      PYANNOTE_AUTH_TOKEN: ${PYANNOTE_AUTH_TOKEN:-}
+      DB_URL: ${DB_URL}
+      PIPELINE_API: http://pipeline_controller:8021
+    volumes:
+      - ./data:/data
+    depends_on:
+      - db
+      - pipeline_controller
+    entrypoint: ["python3", "main.py"]
+
+  validation_gpu:
+    build: ./backend/processing/validation_gpu
+    environment:
+      INPUT_PATH: ${INPUT_PATH:-/data/transcripts}
+      OUTPUT_PATH: ${OUTPUT_PATH:-/data/validated}
+      RUN_TAG: ${RUN_TAG:-}
+      VALIDATION_MODEL: ${VALIDATION_MODEL:-clinical}
+      VALIDATION_THRESHOLD: ${VALIDATION_THRESHOLD:-0.5}
+      DB_URL: ${DB_URL}
+      PIPELINE_API: http://pipeline_controller:8021
+    volumes:
+      - ./data:/data
+    depends_on:
+      - db
+      - pipeline_controller
+
+  chunking_embeddings_gpu:
+    build: ./backend/processing/chunking_embeddings_gpu
+    environment:
+      INPUT_PATH: ${INPUT_PATH:-/data/validated}
+      OUTPUT_PATH: ${OUTPUT_PATH:-/data/chunks}
+      RUN_TAG: ${RUN_TAG:-}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-3-large}
+      EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-64}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-cirs_chunks}
+      PIPELINE_API: http://pipeline_controller:8021
+    volumes:
+      - ./data:/data
+    depends_on:
+      - qdrant
+      - pipeline_controller
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6333:6333"
+    restart: unless-stopped
+
+  auth:
+    build: ./backend/auth
+    environment:
+      DB_URL: ${DB_URL}
+      AUTH_JWT_ALG: ${AUTH_JWT_ALG:-HS256}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      AUTH_ACCESS_TTL_MIN: ${AUTH_ACCESS_TTL_MIN:-15}
+      AUTH_REFRESH_TTL_DAYS: ${AUTH_REFRESH_TTL_DAYS:-14}
+      TENANCY_DEFAULT_NAME: ${TENANCY_DEFAULT_NAME:-default}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    depends_on:
+      - db
+    ports:
+      - "8019:8019"
+    restart: unless-stopped
+
+  feedback:
+    build: ./backend/feedback
+    environment:
+      DB_URL: ${DB_URL}
+    depends_on:
+      - db
+    ports:
+      - "8014:8014"
+    restart: unless-stopped
+
+  hybrid_retriever:
+    build: ./backend/retrieval/hybrid_retriever
+    environment:
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+    depends_on:
+      - qdrant
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+
+  chat_orchestrator:
+    build: ./backend/chat_orchestrator
+    environment:
+      RETRIEVER_URL: ${RETRIEVER_URL:-http://hybrid_retriever:8002}
+      AUTH_URL: http://auth:8019
+    depends_on:
+      - hybrid_retriever
+      - auth
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+
+  docs:
+    build: ./docs
+    volumes:
+      - ./docs:/docs
+    ports:
+      - "8020:8020"
+    depends_on:
+      - auth
+      - hybrid_retriever
+      - chat_orchestrator
+    restart: unless-stopped

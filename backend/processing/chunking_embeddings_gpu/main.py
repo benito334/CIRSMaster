@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 
 from dotenv import load_dotenv
 from tqdm import tqdm
+import requests
 
 load_dotenv()
 
@@ -118,6 +119,21 @@ def process_file(path: Path, run_tag: str) -> Optional[Dict[str, Any]]:
     if idx.get(h):
         return None
     try:
+        # notify start
+        try:
+            import uuid as _uuid
+            file_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(path)))
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "embed",
+                "done": False,
+                "error": None,
+                "filename": str(path),
+                "file_type": "document",
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         segments = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(segments, dict) and "segments" in segments:
             segments = segments["segments"]
@@ -133,6 +149,19 @@ def process_file(path: Path, run_tag: str) -> Optional[Dict[str, Any]]:
         maybe_write_db(chunks, model=EMBED_MODEL, dim=emb_res.dim)
         idx[h] = {"in": str(path), "chunks": str(out_path), "count": len(chunks), "dim": emb_res.dim, "run_tag": run_tag}
         save_index(idx)
+        # notify success
+        try:
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "embed",
+                "done": True,
+                "error": None,
+                "filename": str(path),
+                "file_type": "document",
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         return {"in": str(path), "out": str(out_path), "count": len(chunks), "dim": emb_res.dim}
     except Exception:
         return None

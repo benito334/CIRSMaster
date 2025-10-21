@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 import numpy as np
+import requests
 from tqdm import tqdm
 from dotenv import load_dotenv
 
@@ -206,6 +207,21 @@ def process_sidecar(path: Path, run_tag: str, source_id: Optional[str]) -> Optio
     if idx.get(h):
         return None
     try:
+        # notify start
+        try:
+            import uuid as _uuid
+            file_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(path)))
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "validate",
+                "done": False,
+                "error": None,
+                "filename": str(path),
+                "file_type": detect_media_kind(path),
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         data = json.loads(path.read_text(encoding="utf-8"))
         segments = data.get("segments") or []
         validated = validate_segments(segments)
@@ -214,6 +230,19 @@ def process_sidecar(path: Path, run_tag: str, source_id: Optional[str]) -> Optio
         maybe_write_db(validated, source_id)
         idx[h] = {"in": str(path), "out": str(out_path), "run_tag": run_tag}
         save_index(idx)
+        # notify success
+        try:
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "validate",
+                "done": True,
+                "error": None,
+                "filename": str(path),
+                "file_type": media_kind,
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         return {"in": str(path), "out": str(out_path)}
     except Exception:
         return None

@@ -3,3 +3,5 @@ docs/site/
 docs_build/
 coverage/
 /data/ingestion/
+/data/transcripts
+/data/postgres

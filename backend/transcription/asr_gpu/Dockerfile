@@ -9,7 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # System deps (ffmpeg, python, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv python3-dev build-essential \
-        ffmpeg git \
+        ffmpeg git pkg-config python3-av \
+        libgl1 libglib2.0-0 \
+        libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev \
+        libswresample-dev libswscale-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,9 +20,13 @@ WORKDIR /app
 # Copy requirements first
 COPY requirements.txt /app/requirements.txt
 
-# Install PyTorch with CUDA 12.1, then Python deps
+# Install pinned PyTorch CUDA 12.1 stack, then Python deps
 RUN pip3 install --upgrade pip \
- && pip3 install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio \
+ && pip3 install --index-url https://download.pytorch.org/whl/cu121 \
+        torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 \
+ && pip3 install --no-deps faster-whisper==1.0.3 \
+ && pip3 install --no-deps whisperx==3.3.1 \
+ && pip3 install pyannote.audio==3.1.1 \
  && pip3 install -r /app/requirements.txt
 
 # Add source code

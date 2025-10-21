@@ -1,5 +1,6 @@
 site_name: CIRS Agent Docs
 site_url: http://localhost:8020
+docs_dir: site
 nav:
   - Home: index.md
   - Getting Started: getting_started.md
@@ -10,6 +11,8 @@ nav:
   - GPU Setup: gpu_setup.md
   - Troubleshooting: troubleshooting.md
   - Release Process: release_process.md
+  - User Manuals:
+      - Ingestion Pipeline: user_manuals/ingestion_pipeline_guide.md
 theme:
   name: material
 markdown_extensions:

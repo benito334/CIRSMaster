@@ -478,3 +478,26 @@
 - Expand docs with Monitoring UI guides and provenance dashboards.  
 - Add ER diagram generation workflow and API auto-refresh.  
 - Publish docs as static site artifact in CI.
+
+## 2025-10-20 — User Manual: Ingestion Pipeline
+**Files:** docs/user_manuals/ingestion_pipeline_guide.md  
+**Summary:** Step-by-step guide for non-technical users covering ingestion sources, processing steps, scheduler setup, verification, and troubleshooting.  
+
+## 2025-10-20 — Docs Ingestion Service (PDF/EPUB)
+**Files Modified:**  
+- backend/ingestion/docs/{Dockerfile,requirements.txt,config.py,main.py}  
+- compose.local.yml (added docs_ingest service)  
+- docs/user_manuals/ingestion_pipeline_guide.md (added PDF/EPUB section; clarified scoping flags)  
+**Summary:** Added local document ingestion pipeline to convert PDFs/EPUBs into transcript sidecars for downstream validation and chunk+embed indexing.
+
+## 2025-10-21 — Milestone 3.11: Processing Dashboard & Pipeline Controller
+**Model:** GPT-5 Low Reasoning  
+**Files Modified:**  
+- backend/pipeline_controller/{config.py,main.py,models.py,requirements.txt,Dockerfile}  
+- compose.local.yml (added pipeline_controller on 8021)  
+- frontend/chat_ui/src/App.tsx (added Processing tab)  
+- frontend/chat_ui/src/components/ProcessingDashboard.tsx  
+- frontend/chat_ui/src/lib/pipelineApi.ts  
+**Actions Completed:** Added backend controller with status/process APIs and DB table; frontend dashboard to view items and trigger runs; integrated into local compose.  
+**Verification:** Start `pipeline_controller` and open Processing tab; call `/status/all` returns items (empty initially).  
+**Next Step:** Wire GPU services to POST `/status/update` during runs; add WS/SSE live updates; add logs view and reprocess per-stage.
