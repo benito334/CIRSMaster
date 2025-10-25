@@ -5,3 +5,5 @@ coverage/
 /data/ingestion/
 /data/transcripts
 /data/postgres
+/data/validated
+/data/processed

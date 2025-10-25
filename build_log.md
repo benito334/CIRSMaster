@@ -501,3 +501,29 @@
 **Actions Completed:** Added backend controller with status/process APIs and DB table; frontend dashboard to view items and trigger runs; integrated into local compose.  
 **Verification:** Start `pipeline_controller` and open Processing tab; call `/status/all` returns items (empty initially).  
 **Next Step:** Wire GPU services to POST `/status/update` during runs; add WS/SSE live updates; add logs view and reprocess per-stage.
+
+## 2025-10-24 — Milestone 2.6.1: Medical Validation Enhancements (Entities, Negation, Numeric QA)
+**Model:** Cascade  
+**Files Modified:**  
+- `backend/processing/validation_gpu/main.py`  
+- `backend/processing/validation_gpu/requirements.txt`  
+
+**Actions Completed:**  
+- Added lightweight medical validation to `validate_segments()`:
+  - Entity extraction via spaCy/SciSpaCy with optional NegEx (negspacy) to flag negated mentions.
+  - Numeric/unit sanity flags using `pint` and regex (e.g., suspicious doses, implausible heart rates).
+  - Confidence adjustment: increases with non-negated entities, decreases when quality flags present.
+  - New fields in validated output: `entities` and `quality_flags` per segment.
+- Made all additions resilient if optional models/packages are unavailable (falls back to previous behavior).
+- Requirements updated to include `pint` and `negspacy`.
+
+**Verification:**  
+- Rebuild service: `docker compose -f compose.local.yml build --no-cache validation_gpu`  
+- Run validation over transcripts:  
+  ```powershell
+  docker compose -f compose.local.yml run --rm -e RUN_TAG=$env:RUN_TAG validation_gpu
+  ```
+- Confirm output JSON under `data/validated/.../<RUN_TAG>/` includes `entities` and `quality_flags`.  
+
+**Next Step:**  
+- Integrate SciSpaCy UMLS linker and preferred terms (CUIs); expand numeric QA to labs/units; optional factuality cross-check.
