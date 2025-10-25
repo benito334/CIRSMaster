@@ -7,3 +7,6 @@ coverage/
 /data/postgres
 /data/validated
 /data/processed
+.env
+.env.local
+.env.*.local
