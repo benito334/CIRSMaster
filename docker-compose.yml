@@ -1,5 +1,23 @@
 version: "3.9"
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: cirs-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cirs}
+      POSTGRES_USER: ${POSTGRES_USER:-cirs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cirs}
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cirs}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   qdrant:
     image: qdrant/qdrant:latest
     container_name: cirs-qdrant
@@ -205,23 +223,6 @@ services:
       - ./data:/data
     ports:
       - "8014:8014"
-
-  finetune:
-    build: ./backend/finetune
-    container_name: cirs-finetune
-    environment:
-      - DB_URL=${DB_URL}
-      - FINETUNE_ENABLED=${FINETUNE_ENABLED:-false}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: ["gpu"]
-    volumes:
-      - ./data:/data
-      - ./backend:/backend
-    ports:
-      - "8015:8015"
 
   security_guardrails:
     build: ./backend/security_guardrails

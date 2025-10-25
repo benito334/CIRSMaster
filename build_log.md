@@ -1,7 +1,50 @@
+## 2025-05-07 — Immediate Next Steps Remediation
+**Model:** gpt-5-codex
+**Files Modified:**
+- backend/alignment_qa/__init__.py
+- backend/reinforcement/__init__.py
+- backend/evaluation/__init__.py
+- backend/feedback/__init__.py
+- backend/monitoring/__init__.py
+- backend/security_guardrails/__init__.py
+- backend/license_audit/__init__.py
+- docker-compose.yml
+- scripts/run_pipeline.py
+- planning.md
+- tests/test_service_imports.py
+
+**Actions Completed:**
+- Packaged every milestone 3.x FastAPI service so `uvicorn backend.<service>.main:app` resolves cleanly and added pytest smoke tests to guarantee the import path stays healthy.
+- Introduced a reusable Postgres service (`db`) to `docker-compose.yml` and removed the orphaned `finetune` build block that pointed at a non-existent directory.
+- Added `scripts/run_pipeline.py` to automate ASR ➝ validation ➝ chunking runs, emit JSON summaries, and clear resumability indexes on demand for deterministic CI jobs.
+- Updated `planning.md` to reflect the completed remediation work, document the new pipeline automation, and clarify that monitoring metrics remain in a planned state until signals exist.
+
+**Verification:**
+- `pytest tests/test_service_imports.py`
+
+---
+
+## 2025-05-06 — Repository Audit & Reality Check
+**Model:** gpt-5-codex
+**Scope Reviewed:** planning.md, docker-compose.yml, backend services (evaluation, alignment_qa, reinforcement, feedback, monitoring, security_guardrails, license_audit)
+
+**Findings:**
+- Milestone 2.x services (ASR CLI, validation CLI, chunking/embed CLI, hybrid retriever, chat orchestrator, chat UI) exist and run as standalone scripts/services.
+- Every new milestone 3.x service uses package-relative imports (e.g., `from .foo import …`) without packaging the directories. `uvicorn main:app` fails immediately with `ImportError: attempted relative import with no known parent package`. The code has never successfully started in its current form.【F:backend/alignment_qa/main.py†L1-L16】【F:backend/reinforcement/main.py†L1-L18】【F:backend/evaluation/main.py†L1-L19】【F:backend/feedback/main.py†L1-L11】【F:backend/security_guardrails/main.py†L1-L12】【F:backend/license_audit/main.py†L1-L12】【F:backend/monitoring/main.py†L1-L12】
+- `docker-compose.yml` references a `db` service and a `backend/finetune` build context that do not exist, so `docker compose up` cannot succeed as written.【F:docker-compose.yml†L197-L210】【be3092†L1-L2】
+- No automation ties the ingestion outputs into validation/chunking or rebuilds the BM25 index—those steps remain manual.
+
+**Immediate Actions Proposed:**
+1. Add `__init__.py` (or switch to absolute imports) and smoke tests for each FastAPI service before proceeding with milestone 3.x.
+2. Fix the compose stack (add a Postgres definition or remove the dependency, drop or implement `backend/finetune`).
+3. Script an end-to-end pipeline (ASR ➝ validation ➝ chunking ➝ retriever index rebuild) that can be invoked locally/CI.
+
+---
+
 ## 2025-10-19 — Milestone 2.5: Unified Transcription & Validation (ASR GPU service)
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- backend/transcription/asr_gpu/main.py  
+**Model:** GPT-5 Low Reasoning
+**Files Modified:**
+- backend/transcription/asr_gpu/main.py
 - backend/transcription/asr_gpu/config.py  
 - backend/transcription/asr_gpu/requirements.txt  
 - backend/transcription/asr_gpu/Dockerfile  
