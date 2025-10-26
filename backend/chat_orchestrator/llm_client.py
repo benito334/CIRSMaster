@@ -2,7 +2,7 @@ import json
 from typing import Dict, Any, List
 import httpx
 
-from .config import (
+from config import (
     LLM_MODE,
     LLM_LOCAL_URL,
     LLM_LOCAL_MODEL,
