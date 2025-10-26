@@ -3,7 +3,11 @@ from pydantic import BaseModel
 from typing import Optional
 from prometheus_client import Counter, CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
+<<<<<<< HEAD
 from schema import AnswerFeedback, ModuleFeedback
+=======
+from .schema import AnswerFeedback, ModuleFeedback
+>>>>>>> origin/codex/review-repository-for-issues-and-updates
 
 registry = CollectorRegistry()
 feedback_counter = Counter('feedback_total', 'User feedback count', ['type','rating'], registry=registry)

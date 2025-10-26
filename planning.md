@@ -4,6 +4,33 @@
 
 ---
 
+## ✅ Status Audit (2025-05-06)
+
+**What is working today**
+
+* GPU ASR CLI (`backend/transcription/asr_gpu`) produces WhisperX transcripts with diarization and optional Postgres writes.
+* Validation and chunking pipelines exist and can be run as CLIs to produce validated segments and embed them into Qdrant (`backend/processing/validation_gpu`, `backend/processing/chunking_embeddings_gpu`).
+* Hybrid retrieval FastAPI service (`backend/retrieval/hybrid_retriever`) provides vector/BM25/weighted results and powers the chat orchestrator.
+* Chat UI + orchestrator can retrieve chunks and stream responses when the retriever + LLM endpoints are available (`frontend/chat_ui`, `backend/chat_orchestrator`).
+
+**Major gaps discovered during review**
+
+* All new milestone 3.x services (evaluation, alignment QA, reinforcement, feedback, monitoring, guardrails, license audit) use relative imports (e.g., `from .foo import …`) but the packages have no `__init__.py`. Running `python main.py` or `uvicorn main:app` fails immediately with `ImportError: attempted relative import with no known parent package`.【F:backend/alignment_qa/main.py†L1-L16】【F:backend/reinforcement/main.py†L1-L18】【F:backend/evaluation/main.py†L1-L19】【F:backend/feedback/main.py†L1-L11】【F:backend/security_guardrails/main.py†L1-L12】【F:backend/license_audit/main.py†L1-L12】【F:backend/monitoring/main.py†L1-L12】
+* `docker-compose.yml` declares dependencies on a `db` service that does not exist and attempts to build a missing `backend/finetune` image. Bringing the stack up currently fails at the compose level.【F:docker-compose.yml†L197-L210】【be3092†L1-L2】
+* No automation currently wires the ingestion outputs into the validation/chunking jobs; these are still manual CLI runs. There is also no job orchestration or scheduler.
+* Monitoring/metrics references (Prometheus endpoints, provenance helpers) are mostly placeholders and have not been validated end-to-end.
+
+**Immediate next steps (status as of 2025-05-07)**
+
+1. ✅ Convert each milestone 3.x service into a proper Python package and ensure smoke tests import every `main.app` entry point.
+2. ✅ Define the shared Postgres service in `docker-compose.yml` and remove the orphaned `finetune` container entry.
+3. ✅ Script the end-to-end pipeline (ASR ➝ validation ➝ chunking ➝ index rebuild) so it can be triggered deterministically and captured in CI via `scripts/run_pipeline.py`.
+4. ⏳ Backfill the monitoring plan once services actually emit metrics; Prometheus wiring is documented but remains in a planned state until real signals exist.
+
+This audit section supersedes the optimistic milestone notes further below until the fixes above land.
+
+---
+
 ## 1. Project Structure
 
 ### 📁 Folder Layout
@@ -84,6 +111,12 @@ Responsible for acquiring data from various media platforms and formats.
 * **Embeddings**: Generate using BGE or Instructor models on GPU.
 * **Metadata Enrichment**: Adds provenance info, author, timestamps, license.
 
+#### Pipeline Automation
+
+* `scripts/run_pipeline.py` orchestrates the ASR ➝ validation ➝ chunking sequence with a single command so CI can rebuild indexes deterministically.
+* Pass `--fresh` to clear resumability indexes (`.processed_index.json`, `.validated_index.json`, `.embedded_index.json`) before executing.
+* Outputs a JSON summary to `data/pipeline_runs/<run_tag>.json` that records counts from each stage for auditability.
+
 ### 2.4 Database & Metadata Architecture
 
 #### Hybrid Strategy
@@ -139,6 +172,7 @@ Indexes:
 * Prometheus + Grafana for metrics.
 * Loki or OpenTelemetry for logs.
 * Sentry (optional) for error tracking.
+* **Status**: Prometheus endpoints exist on milestone 3.x services but remain in "planned" mode until real metrics flow from the pipeline automation work above.
 
 ---
 

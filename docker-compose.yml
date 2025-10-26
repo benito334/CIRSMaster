@@ -1,5 +1,23 @@
 
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: cirs-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cirs}
+      POSTGRES_USER: ${POSTGRES_USER:-cirs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cirs}
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cirs}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   qdrant:
     image: qdrant/qdrant:latest
     container_name: cirs-qdrant
@@ -206,6 +224,7 @@ services:
     ports:
       - "8014:8014"
 
+<<<<<<< HEAD
   finetune:
     build: ./backend/finetune
     container_name: cirs-finetune
@@ -223,6 +242,8 @@ services:
     ports:
       - "8015:8015"
 
+=======
+>>>>>>> origin/codex/review-repository-for-issues-and-updates
   security_guardrails:
     build: ./backend/security_guardrails
     container_name: cirs-security-guardrails
@@ -243,6 +264,7 @@ services:
       - ./data:/data
     ports:
       - "8017:8017"
+<<<<<<< HEAD
 
   backup:
     build: ./backend/backup
@@ -293,3 +315,5 @@ services:
       - hybrid_retriever
       - chat_orchestrator
     restart: unless-stopped
+=======
+>>>>>>> origin/codex/review-repository-for-issues-and-updates

@@ -1,7 +1,50 @@
+## 2025-05-07 — Immediate Next Steps Remediation
+**Model:** gpt-5-codex
+**Files Modified:**
+- backend/alignment_qa/__init__.py
+- backend/reinforcement/__init__.py
+- backend/evaluation/__init__.py
+- backend/feedback/__init__.py
+- backend/monitoring/__init__.py
+- backend/security_guardrails/__init__.py
+- backend/license_audit/__init__.py
+- docker-compose.yml
+- scripts/run_pipeline.py
+- planning.md
+- tests/test_service_imports.py
+
+**Actions Completed:**
+- Packaged every milestone 3.x FastAPI service so `uvicorn backend.<service>.main:app` resolves cleanly and added pytest smoke tests to guarantee the import path stays healthy.
+- Introduced a reusable Postgres service (`db`) to `docker-compose.yml` and removed the orphaned `finetune` build block that pointed at a non-existent directory.
+- Added `scripts/run_pipeline.py` to automate ASR ➝ validation ➝ chunking runs, emit JSON summaries, and clear resumability indexes on demand for deterministic CI jobs.
+- Updated `planning.md` to reflect the completed remediation work, document the new pipeline automation, and clarify that monitoring metrics remain in a planned state until signals exist.
+
+**Verification:**
+- `pytest tests/test_service_imports.py`
+
+---
+
+## 2025-05-06 — Repository Audit & Reality Check
+**Model:** gpt-5-codex
+**Scope Reviewed:** planning.md, docker-compose.yml, backend services (evaluation, alignment_qa, reinforcement, feedback, monitoring, security_guardrails, license_audit)
+
+**Findings:**
+- Milestone 2.x services (ASR CLI, validation CLI, chunking/embed CLI, hybrid retriever, chat orchestrator, chat UI) exist and run as standalone scripts/services.
+- Every new milestone 3.x service uses package-relative imports (e.g., `from .foo import …`) without packaging the directories. `uvicorn main:app` fails immediately with `ImportError: attempted relative import with no known parent package`. The code has never successfully started in its current form.【F:backend/alignment_qa/main.py†L1-L16】【F:backend/reinforcement/main.py†L1-L18】【F:backend/evaluation/main.py†L1-L19】【F:backend/feedback/main.py†L1-L11】【F:backend/security_guardrails/main.py†L1-L12】【F:backend/license_audit/main.py†L1-L12】【F:backend/monitoring/main.py†L1-L12】
+- `docker-compose.yml` references a `db` service and a `backend/finetune` build context that do not exist, so `docker compose up` cannot succeed as written.【F:docker-compose.yml†L197-L210】【be3092†L1-L2】
+- No automation ties the ingestion outputs into validation/chunking or rebuilds the BM25 index—those steps remain manual.
+
+**Immediate Actions Proposed:**
+1. Add `__init__.py` (or switch to absolute imports) and smoke tests for each FastAPI service before proceeding with milestone 3.x.
+2. Fix the compose stack (add a Postgres definition or remove the dependency, drop or implement `backend/finetune`).
+3. Script an end-to-end pipeline (ASR ➝ validation ➝ chunking ➝ retriever index rebuild) that can be invoked locally/CI.
+
+---
+
 ## 2025-10-19 — Milestone 2.5: Unified Transcription & Validation (ASR GPU service)
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- backend/transcription/asr_gpu/main.py  
+**Model:** GPT-5 Low Reasoning
+**Files Modified:**
+- backend/transcription/asr_gpu/main.py
 - backend/transcription/asr_gpu/config.py  
 - backend/transcription/asr_gpu/requirements.txt  
 - backend/transcription/asr_gpu/Dockerfile  
@@ -346,184 +389,3 @@
 - Thread license metadata through chunk payloads and enforce export restrictions in `chat_orchestrator`/`curriculum_builder`.  
 - Optionally integrate Presidio/SpaCy for improved PII detection.  
 - Add Monitoring UI “Data Integrity” tab with redactions over time and license distribution.
-
-## 2025-10-19 — Milestone 3.7: Backup & Versioned Data Snapshots
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- backend/backup/config.py  
-- backend/backup/pg.py  
-- backend/backup/qdrant.py  
-- backend/backup/artifacts.py  
-- backend/backup/manifest.py  
-- backend/backup/scheduler.py  
-- backend/backup/main.py  
-- backend/backup/requirements.txt  
-- backend/backup/Dockerfile  
-- docker-compose.yml  
-- scripts/restore_example.sh  
-
-**Actions Completed:**  
-- Implemented Backup API/CLI with `/backup/run`, `/backup/list`, `/backup/restore`, `/health`, `/metrics`.  
-- Postgres dump via `pg_dump` → `pg_dump.sql.gz`; Qdrant global snapshot JSON; `/data` artifacts tarball with SHA256 checksums.  
-- Snapshot Manifest with git commit, env fingerprint, host info, timestamp.  
-- Basic retention (keep last N) and Prometheus metrics: `backup_success_total`, `backup_failure_total`, `backup_last_duration_seconds`, `restore_success_total`.  
-- Added `backup` service (8018) to Compose with volumes `/data`, `/backups`, and qdrant storage.  
-
-**Verification:**  
-- Compose: `docker compose up -d --build backup`; `curl -X POST http://localhost:8018/backup/run`.  
-- List snapshots: `curl http://localhost:8018/backup/list`.  
-- Verify checksums: `sha256sum -c /backups/snapshots/<id>/checksums.sha256`.  
-- Trial restore in dev via `scripts/restore_example.sh <id>`.  
-
-**Next Step:**  
-- Add full daily/weekly/monthly rotation; capture image digests and model versions into `manifest.json`.  
-- Optional offsite mirror via rclone/Restic when `OFFSITE_ENABLED=true`.  
-- Integrate backup health status into Monitoring UI.
-
-## 2025-10-19 — Milestone 3.8: Multi-Tenant User Auth & RBAC
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- backend/auth/config.py  
-- backend/auth/security.py  
-- backend/auth/models.py  
-- backend/auth/main.py  
-- backend/auth/requirements.txt  
-- backend/auth/Dockerfile  
-- backend/common/auth_client.py  
-- docker-compose.yml  
-
-**Actions Completed:**  
-- Implemented Auth service with `/auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/whoami`, `/health`, `/metrics`.  
-- Password hashing via `passlib[bcrypt]`; JWT mint/verify using `HS256` (configurable).  
-- DB schema created: `cirs.tenants`, `cirs.users`, `cirs.api_keys` (DDL ready; API keys endpoints pending).  
-- Bootstrap on startup supports default tenant and admin via env vars.  
-- Shared dependency `backend/common/auth_client.py` exposes `require_auth(scopes=[...])` for services.  
-- Compose updated with `auth` service on port 8019.  
-
-**Verification:**  
-- Compose: `docker compose up -d --build auth`; health at `http://localhost:8019/health`.  
-- Signup: `curl -X POST http://localhost:8019/auth/signup -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"pass"}'`.  
-- Login: `curl -X POST http://localhost:8019/auth/login -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"pass"}'` → returns tokens.  
-- Whoami: `curl http://localhost:8019/auth/whoami -H "Authorization: Bearer <access>"`.  
-
-**Next Step:**  
-- Add API key endpoints and scope enforcement; integrate `require_auth` across services (chat_orchestrator `/chat`, retriever `/search`, backup `/backup/run`, etc.).  
-- Thread `tenant_id` into domain tables and queries; add Qdrant filter on `tenant_id`.  
-- Frontend: add `/login` page, token storage, and auth header injection in `frontend/chat_ui/src/lib/api.ts`.
-
-## 2025-10-19 — Milestone 3.9: Deployment Automation & CI/CD
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- .github/workflows/ci.yml  
-- .github/workflows/release.yml  
-- Makefile  
-- compose.prod.yml  
-- scripts/deploy_local.sh  
-- scripts/sbom.sh  
-- scripts/migrate.sh  
-- VERSION (planned)  
-- CHANGELOG.md (planned)  
-
-**Actions Completed:**  
-- CI: Lint/tests, Docker build matrix (no push), Trivy scan, SBOM artifact via GitHub Actions.  
-- Release: Tag-triggered workflow scaffolding for GHCR build/push and SBOM artifact.  
-- Makefile targets for dev ergonomics; production compose with pinned services scaffolded.  
-- Deploy scripts for local rollout, SBOM generation, and DB migration placeholder.  
-
-**Verification:**  
-- PR CI runs on push/PR; view checks for lint/test/scan/sbom.  
-- Tag `v0.9.0` to trigger `release.yml`; confirm images in GHCR and SBOM artifacts.  
-- `make build` builds locally; `scripts/deploy_local.sh` updates prod stack.  
-
-**Next Step:**  
-- Add `VERSION` and `CHANGELOG.md` with keep-a-changelog; wire version labels into Docker builds.  
-- Pin images by digest in `compose.prod.yml`; add path filters to build only changed services.  
-- Add Bandit strict mode and dependency license checks; optional SLSA provenance.
-
-## 2025-10-19 — Milestone 3.10: Documentation & Developer Toolkit
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- docs/mkdocs.yml  
-- docs/Dockerfile  
-- docs/index.md  
-- docs/getting_started.md  
-- docs/architecture.md  
-- docs/developer_guide.md  
-- docs/api_reference.md  
-- docs/database_schema.md  
-- docs/gpu_setup.md  
-- docs/troubleshooting.md  
-- backend/docs_generator/main.py  
-- docker-compose.yml  
-- .env.example  
-- CONTRIBUTING.md  
-- CODE_OF_CONDUCT.md  
-- LICENSE  
-- .gitignore  
-- Makefile  
-- scripts/dev_init.sh  
-
-**Actions Completed:**  
-- Added MkDocs-based documentation suite with architecture, getting started, API reference, GPU setup, troubleshooting, and release process.  
-- Implemented OpenAPI aggregator to merge service specs into a single JSON (`docs/api/openapi_combined.json`).  
-- Added docs service to Compose on port 8020; Makefile targets to build/serve docs.  
-- Provided `.env.example`, contributing guide, code of conduct, license, and developer bootstrap script.  
-
-**Verification:**  
-- `docker compose up -d --build docs` then visit `http://localhost:8020`.  
-- Generate combined OpenAPI: `python backend/docs_generator/main.py --output docs/api/openapi_combined.json`.  
-- `make docs-serve` serves docs locally.  
-
-**Next Step:**  
-- Expand docs with Monitoring UI guides and provenance dashboards.  
-- Add ER diagram generation workflow and API auto-refresh.  
-- Publish docs as static site artifact in CI.
-
-## 2025-10-20 — User Manual: Ingestion Pipeline
-**Files:** docs/user_manuals/ingestion_pipeline_guide.md  
-**Summary:** Step-by-step guide for non-technical users covering ingestion sources, processing steps, scheduler setup, verification, and troubleshooting.  
-
-## 2025-10-20 — Docs Ingestion Service (PDF/EPUB)
-**Files Modified:**  
-- backend/ingestion/docs/{Dockerfile,requirements.txt,config.py,main.py}  
-- compose.local.yml (added docs_ingest service)  
-- docs/user_manuals/ingestion_pipeline_guide.md (added PDF/EPUB section; clarified scoping flags)  
-**Summary:** Added local document ingestion pipeline to convert PDFs/EPUBs into transcript sidecars for downstream validation and chunk+embed indexing.
-
-## 2025-10-21 — Milestone 3.11: Processing Dashboard & Pipeline Controller
-**Model:** GPT-5 Low Reasoning  
-**Files Modified:**  
-- backend/pipeline_controller/{config.py,main.py,models.py,requirements.txt,Dockerfile}  
-- compose.local.yml (added pipeline_controller on 8021)  
-- frontend/chat_ui/src/App.tsx (added Processing tab)  
-- frontend/chat_ui/src/components/ProcessingDashboard.tsx  
-- frontend/chat_ui/src/lib/pipelineApi.ts  
-**Actions Completed:** Added backend controller with status/process APIs and DB table; frontend dashboard to view items and trigger runs; integrated into local compose.  
-**Verification:** Start `pipeline_controller` and open Processing tab; call `/status/all` returns items (empty initially).  
-**Next Step:** Wire GPU services to POST `/status/update` during runs; add WS/SSE live updates; add logs view and reprocess per-stage.
-
-## 2025-10-24 — Milestone 2.6.1: Medical Validation Enhancements (Entities, Negation, Numeric QA)
-**Model:** Cascade  
-**Files Modified:**  
-- `backend/processing/validation_gpu/main.py`  
-- `backend/processing/validation_gpu/requirements.txt`  
-
-**Actions Completed:**  
-- Added lightweight medical validation to `validate_segments()`:
-  - Entity extraction via spaCy/SciSpaCy with optional NegEx (negspacy) to flag negated mentions.
-  - Numeric/unit sanity flags using `pint` and regex (e.g., suspicious doses, implausible heart rates).
-  - Confidence adjustment: increases with non-negated entities, decreases when quality flags present.
-  - New fields in validated output: `entities` and `quality_flags` per segment.
-- Made all additions resilient if optional models/packages are unavailable (falls back to previous behavior).
-- Requirements updated to include `pint` and `negspacy`.
-
-**Verification:**  
-- Rebuild service: `docker compose -f compose.local.yml build --no-cache validation_gpu`  
-- Run validation over transcripts:  
-  ```powershell
-  docker compose -f compose.local.yml run --rm -e RUN_TAG=$env:RUN_TAG validation_gpu
-  ```
-- Confirm output JSON under `data/validated/.../<RUN_TAG>/` includes `entities` and `quality_flags`.  
-
-**Next Step:**  
-- Integrate SciSpaCy UMLS linker and preferred terms (CUIs); expand numeric QA to labs/units; optional factuality cross-check.
