@@ -223,8 +223,6 @@ services:
       - ./data:/data
     ports:
       - "8014:8014"
-
-<<<<<<< HEAD
   finetune:
     build: ./backend/finetune
     container_name: cirs-finetune
@@ -241,9 +239,6 @@ services:
       - ./backend:/backend
     ports:
       - "8015:8015"
-
-=======
->>>>>>> origin/codex/review-repository-for-issues-and-updates
   security_guardrails:
     build: ./backend/security_guardrails
     container_name: cirs-security-guardrails
@@ -264,8 +259,6 @@ services:
       - ./data:/data
     ports:
       - "8017:8017"
-<<<<<<< HEAD
-
   backup:
     build: ./backend/backup
     container_name: cirs-backup
@@ -315,5 +308,3 @@ services:
       - hybrid_retriever
       - chat_orchestrator
     restart: unless-stopped
-=======
->>>>>>> origin/codex/review-repository-for-issues-and-updates

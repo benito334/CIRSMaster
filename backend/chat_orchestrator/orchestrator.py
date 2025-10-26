@@ -4,13 +4,8 @@ import httpx
 from datetime import datetime
 from pathlib import Path
 
-<<<<<<< HEAD
-from config import RETRIEVER_URL, TOP_K, SAVE_CONTEXT, CONTEXT_DIR
-from llm_client import generate_async
-=======
 from .config import RETRIEVER_URL, TOP_K, SAVE_CONTEXT, CONTEXT_DIR
 from .llm_client import generate_async
->>>>>>> origin/codex/review-repository-for-issues-and-updates
 
 
 async def retrieve_chunks(query: str, mode: str = "hybrid", top_k: int = TOP_K) -> List[Dict[str, Any]]:

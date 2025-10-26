@@ -2,11 +2,7 @@ import json
 from typing import Dict, Any, List
 import httpx
 
-<<<<<<< HEAD
-from config import (
-=======
 from .config import (
->>>>>>> origin/codex/review-repository-for-issues-and-updates
     LLM_MODE,
     LLM_LOCAL_URL,
     LLM_LOCAL_MODEL,
