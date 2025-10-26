@@ -1,1 +1,12 @@
+# Docs and build outputs
+docs/site/
+docs_build/
+coverage/
 /data/ingestion/
+/data/transcripts
+/data/postgres
+/data/validated
+/data/processed
+.env
+.env.local
+.env.*.local

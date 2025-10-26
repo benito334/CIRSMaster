@@ -1,0 +1,78 @@
+version: "3.9"
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  auth:
+    image: ghcr.io/OWNER/cirs-auth:latest
+    environment:
+      - DB_URL=${DB_URL}
+      - AUTH_JWT_ALG=${AUTH_JWT_ALG:-HS256}
+      - AUTH_JWT_SECRET=${AUTH_JWT_SECRET}
+      - AUTH_ACCESS_TTL_MIN=${AUTH_ACCESS_TTL_MIN:-15}
+      - AUTH_REFRESH_TTL_DAYS=${AUTH_REFRESH_TTL_DAYS:-14}
+    depends_on: [db]
+    ports: ["8019:8019"]
+    restart: unless-stopped
+
+  hybrid_retriever:
+    image: ghcr.io/OWNER/cirs-hybrid_retriever:latest
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+    depends_on: [qdrant]
+    ports: ["8002:8002"]
+    restart: unless-stopped
+
+  chat_orchestrator:
+    image: ghcr.io/OWNER/cirs-chat_orchestrator:latest
+    environment:
+      - RETRIEVER_URL=http://hybrid_retriever:8002
+      - AUTH_URL=http://auth:8019
+    depends_on: [hybrid_retriever, auth]
+    ports: ["8003:8003"]
+    restart: unless-stopped
+
+  feedback:
+    image: ghcr.io/OWNER/cirs-feedback:latest
+    environment:
+      - DB_URL=${DB_URL}
+    depends_on: [db]
+    ports: ["8014:8014"]
+    restart: unless-stopped
+
+  backup:
+    image: ghcr.io/OWNER/cirs-backup:latest
+    environment:
+      - BACKUP_ROOT=/backups/snapshots
+      - INCLUDE_DIRS=/data/transcripts,/data/validated,/data/chunks,/data/ingestion,/data/security,/data/index
+      - PG_HOST=db
+      - PG_USER=cirs
+      - PG_DB=cirs
+      - QDRANT_URL=http://qdrant:6333
+      - DB_URL=${DB_URL}
+    volumes:
+      - ./data:/data:ro
+      - ./data/qdrant:/qdrant/storage:ro
+      - ./backups:/backups
+    depends_on: [db, qdrant]
+    ports: ["8018:8018"]
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=cirs
+      - POSTGRES_USER=cirs
+      - POSTGRES_PASSWORD=cirs
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports: ["5432:5432"]
+    restart: unless-stopped

@@ -10,11 +10,37 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 import numpy as np
+import requests
 import ffmpeg
 from tqdm import tqdm
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# Suppress noisy third-party deprecation/move warnings emitted by pyannote/torchaudio/speechbrain
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="torchaudio._backend.set_audio_backend has been deprecated",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message="torchaudio._backend.get_audio_backend has been deprecated",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message="`torchaudio.backend.common.AudioMetaData` has been moved",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message="Module 'speechbrain.pretrained' was deprecated",
+    category=UserWarning,
+)
+
+PIPELINE_API = os.getenv("PIPELINE_API", "http://pipeline_controller:8021")
 
 from config import (
     ASR_MODEL,
@@ -95,22 +121,46 @@ def to_timestamp_tag() -> str:
 def run_asr(audio_path: Path, device: str = "cuda") -> Dict[str, Any]:
     whisperx = _import_whisperx()
 
-    model = whisperx.load_model(
-        ASR_MODEL,
-        device=device,
-        compute_type=ASR_COMPUTE_TYPE,
-    )
-    result = model.transcribe(str(audio_path))
-
-    # Alignment model (optional but improves word timings)
     try:
-        model_a, metadata = whisperx.load_align_model(language_code=result.get("language", "en"), device=device)
-        result = whisperx.align(result["segments"], model_a, metadata, str(audio_path), device)
-    except Exception:
-        # Fallback to unaligned segments
-        pass
+        model = whisperx.load_model(
+            ASR_MODEL,
+            device=device,
+            compute_type=ASR_COMPUTE_TYPE,
+        )
+        # Force English to skip language detection and speed up inference
+        result = model.transcribe(str(audio_path), language="en")
 
-    return result
+        # Alignment model (optional but improves word timings)
+        try:
+            model_a, metadata = whisperx.load_align_model(language_code=result.get("language", "en"), device=device)
+            result = whisperx.align(result["segments"], model_a, metadata, str(audio_path), device)
+        except Exception:
+            # Fallback to unaligned segments
+            pass
+
+        return result
+    except TypeError as e:
+        # Known mismatch between whisperx and faster-whisper TranscriptionOptions signatures.
+        # Fallback to direct faster-whisper transcription.
+        if "TranscriptionOptions" in str(e) or "unexpected keyword" in str(e):
+            from faster_whisper import WhisperModel
+            import librosa
+
+            model = WhisperModel(ASR_MODEL, device=device, compute_type=ASR_COMPUTE_TYPE)
+            # Pre-decode to 16k mono numpy to avoid PyAV path
+            audio_np, sr = librosa.load(str(audio_path), sr=16000, mono=True)
+            segments_iter, info = model.transcribe(audio_np, language="en")
+            segments = []
+            for seg in segments_iter:
+                segments.append({
+                    "start": float(getattr(seg, "start", 0.0)),
+                    "end": float(getattr(seg, "end", 0.0)),
+                    "text": getattr(seg, "text", ""),
+                    "avg_logprob": getattr(seg, "avg_logprob", None),
+                })
+            return {"language": getattr(info, "language", None), "segments": segments}
+        else:
+            raise
 
 
 def run_diarization(audio_path: Path) -> Optional[List[Dict[str, Any]]]:
@@ -187,6 +237,16 @@ def write_outputs(base_out_dir: Path, media_kind: str, input_path: Path, sidecar
     return {"json": json_path, "txt": txt_path}
 
 
+def move_to_processed(path: Path):
+    try:
+        dest_dir = path.parent / "processed"
+        ensure_dir(dest_dir)
+        shutil.move(str(path), str(dest_dir / path.name))
+    except Exception:
+        # Non-fatal: best-effort move
+        pass
+
+
 def maybe_write_db(sidecar: Dict[str, Any], source_id: Optional[str] = None):
     if not DB_URL or not source_id:
         return False
@@ -224,8 +284,12 @@ def process_media_file(path: Path, run_tag: str, source_id: Optional[str] = None
     if media_kind == "unknown":
         return None
 
-    # Compute file hash for resumability
+    # Compute file hash for resumability and derive a stable UUID for pipeline status
     file_hash = sha256_file(path)
+    try:
+        file_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path)))
+    except Exception:
+        file_id = str(uuid.uuid4())
     index = load_index()
     if index.get(file_hash):
         print(f"[skip] already processed: {path}")
@@ -239,7 +303,20 @@ def process_media_file(path: Path, run_tag: str, source_id: Optional[str] = None
     else:
         audio_for_asr = path
 
+    # Notify start
     try:
+        try:
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "asr",
+                "done": False,
+                "error": None,
+                "filename": str(path),
+                "file_type": media_kind,
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         asr_result = run_asr(audio_for_asr)
         diar_segments = run_diarization(audio_for_asr)
         segments = asr_result.get("segments", asr_result)
@@ -257,6 +334,21 @@ def process_media_file(path: Path, run_tag: str, source_id: Optional[str] = None
             "outputs": {k: str(v) for k, v in outputs.items()},
         }
         save_index(index)
+        # Move original source file to processed subfolder on success
+        move_to_processed(path)
+        # Notify success
+        try:
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "asr",
+                "done": True,
+                "error": None,
+                "filename": str(path),
+                "file_type": media_kind,
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         return {"path": str(path), "outputs": outputs}
     finally:
         if media_kind == "video" and 'audio_for_asr' in locals() and Path(audio_for_asr).exists():

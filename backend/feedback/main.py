@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from prometheus_client import Counter, CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
-from .schema import AnswerFeedback, ModuleFeedback
+from schema import AnswerFeedback, ModuleFeedback
 
 registry = CollectorRegistry()
 feedback_counter = Counter('feedback_total', 'User feedback count', ['type','rating'], registry=registry)

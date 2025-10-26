@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 import numpy as np
+import requests
 from tqdm import tqdm
 from dotenv import load_dotenv
 
@@ -27,7 +28,9 @@ from config import (
 )
 
 _nlp = None
+_negex = None
 _tok_model = None
+_ureg = None
 
 
 def ensure_dir(p: Path):
@@ -85,7 +88,11 @@ def load_nlp():
     if _nlp is None:
         try:
             import spacy
-            _nlp = spacy.blank("en")
+            try:
+                # Prefer a scientific English model if available
+                _nlp = spacy.load("en_core_sci_sm")
+            except Exception:
+                _nlp = spacy.blank("en")
         except Exception:
             _nlp = None
     return _nlp
@@ -115,6 +122,89 @@ def load_llm():
     return _tok_model
 
 
+def load_negex():
+    """Load negation detection if available."""
+    global _negex
+    if _negex is None:
+        try:
+            import negspacy
+            from negspacy.negation import Negex
+            _negex = Negex(language="en")
+            nlp = load_nlp()
+            if nlp is not None:
+                nlp.add_pipe(_negex, last=True)
+        except Exception:
+            _negex = None
+    return _negex
+
+
+def load_units():
+    """Load pint UnitRegistry for numeric checks."""
+    global _ureg
+    if _ureg is None:
+        try:
+            from pint import UnitRegistry
+            _ureg = UnitRegistry()
+        except Exception:
+            _ureg = None
+    return _ureg
+
+
+def extract_entities(text: str) -> List[Dict[str, Any]]:
+    """Lightweight entity extraction with optional negation flags.
+    Falls back gracefully if spaCy/scispaCy unavailable.
+    """
+    ents: List[Dict[str, Any]] = []
+    nlp = load_nlp()
+    if nlp is None:
+        return ents
+    try:
+        doc = nlp(text)
+        for ent in getattr(doc, "ents", []):
+            neg = getattr(ent._, "negex", False)
+            ents.append({
+                "text": ent.text,
+                "label": ent.label_,
+                "negated": bool(neg),
+            })
+    except Exception:
+        pass
+    return ents
+
+
+def numeric_quality_flags(text: str) -> List[str]:
+    """Very simple numeric/unit QA to flag obviously implausible values.
+    This is conservative and only flags egregious outliers.
+    """
+    flags: List[str] = []
+    ureg = load_units()
+    try:
+        import re
+        # Examples: 5000 mg, 1000 bpm, 80 C, 5000 mcg
+        patterns = [r"(\d{3,})\s*(mg|mcg|g|bpm)"]
+        for pat in patterns:
+            for m in re.finditer(pat, text, flags=re.IGNORECASE):
+                val = float(m.group(1))
+                unit = m.group(2).lower()
+                # Dosing sanity (very rough):
+                if unit in {"mg", "mcg", "g"}:
+                    # 10,000 mg (10 g) or more in a single mention is suspicious
+                    mg = val
+                    if unit == "g":
+                        mg = val * 1000.0
+                    if unit == "mcg":
+                        mg = val / 1000.0
+                    if mg >= 10000:
+                        flags.append(f"suspicious_dose:{val}{unit}")
+                # Heart rate sanity
+                if unit == "bpm" and (val < 20 or val > 240):
+                    flags.append(f"implausible_hr:{val}{unit}")
+    except Exception:
+        # If regex/pint not available, skip quietly
+        pass
+    return flags
+
+
 def heuristic_medical_conf(text: str) -> float:
     vocab = ["mold", "mycotoxin", "cholestyramine", "tachycardia", "hypotension", "biotoxin"]
     hits = sum(w in text.lower() for w in vocab)
@@ -141,12 +231,24 @@ def contextual_confidence(text_orig: str, text_val: str) -> float:
 
 
 def validate_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # Ensure optional processors are initialized
+    load_negex()
     out = []
     for s in segments:
         txt = s.get("text", "")
         validated = simple_corrections(txt)
+        entities = extract_entities(validated)
+        flags = numeric_quality_flags(validated)
+
+        # Confidence adjustments: increase with non-negated medical entities, decrease with flags
         c_med = heuristic_medical_conf(validated)
+        non_neg_ents = sum(1 for e in entities if not e.get("negated"))
+        c_med = min(1.0, c_med + 0.02 * non_neg_ents)
+        if flags:
+            c_med = max(0.0, c_med - 0.1)
+
         c_ctx = contextual_confidence(txt, validated)
+
         out.append({
             "start_time": float(s.get("start_time", s.get("start", 0.0))),
             "end_time": float(s.get("end_time", s.get("end", 0.0))),
@@ -155,6 +257,8 @@ def validate_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "text_validated": validated,
             "confidence_medical": float(c_med),
             "confidence_contextual": float(c_ctx),
+            "entities": entities,
+            "quality_flags": flags,
         })
     return out
 
@@ -206,6 +310,21 @@ def process_sidecar(path: Path, run_tag: str, source_id: Optional[str]) -> Optio
     if idx.get(h):
         return None
     try:
+        # notify start
+        try:
+            import uuid as _uuid
+            file_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(path)))
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "validate",
+                "done": False,
+                "error": None,
+                "filename": str(path),
+                "file_type": detect_media_kind(path),
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         data = json.loads(path.read_text(encoding="utf-8"))
         segments = data.get("segments") or []
         validated = validate_segments(segments)
@@ -214,6 +333,19 @@ def process_sidecar(path: Path, run_tag: str, source_id: Optional[str]) -> Optio
         maybe_write_db(validated, source_id)
         idx[h] = {"in": str(path), "out": str(out_path), "run_tag": run_tag}
         save_index(idx)
+        # notify success
+        try:
+            requests.post(f"{PIPELINE_API}/status/update", json={
+                "file_id": file_id,
+                "stage": "validate",
+                "done": True,
+                "error": None,
+                "filename": str(path),
+                "file_type": media_kind,
+                "run_tag": run_tag,
+            }, timeout=2)
+        except Exception:
+            pass
         return {"in": str(path), "out": str(out_path)}
     except Exception:
         return None

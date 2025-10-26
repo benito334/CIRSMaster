@@ -7,3 +7,5 @@ spacy
 umls-downloader
 numpy
 tqdm
+pint
+negspacy
